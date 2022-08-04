@@ -1,0 +1,41 @@
+1. Tkinter app with login and connection to db DONE
+   1. Connection to DB
+   2. Logging
+   3. Upload button
+   4. Start/stop all checking
+   5. All entries monitoring
+      1. Start/stop one product checking
+      2. Delete product
+
+2. DB on VDS  DONE
+   1. Create DB with Tables :
+      1. Users DONE
+        1. Login (str) DONE
+        2. Password (str) DONE
+        3. Access (INT) DONE
+
+    2. Products
+        1. Running (str, 1/0)
+        2. Ebay ID (str)
+        3. E-commercial _url (str)
+        4. Stock_word (str)
+        5. EC_buy_price (str)
+        6. Ebay_price (str)
+        7. Ebay_shipping_price (str)
+        8. Invoicing_charge_price (str)
+        9. Expected_profit (str)
+        10. Commission_factor (str)
+        11. SKU (str)
+
+      3. Products_history
+        1. Ebay ID (str)
+        2. Checked_at (str)
+        3. EC_Price (str)
+
+      4. User`s notes
+        1. Ebay ID (str)
+        2. Notes (str)
+
+
+3. VDS with looped script for checking all entries in db
+

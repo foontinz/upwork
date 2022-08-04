@@ -1,0 +1,4 @@
+ebay_id, ecommerce_url, stock_word, ecommerce_price, ebay_price, ebay_shipping_price, invoicing_charge_price, expected_profit, commission_factor, sku, user_id
+124,https://www.suruga-ya.jp/product/detail/607097198?tenpo_cd=400338,中古 通常,20500,2500,100,100,300,0.95,2,akid
+4234234,https://item.rakuten.co.jp/goodprice1123/10002593/,ゆるいイラスト,200,2500,100,100,300,0.95,2,akid
+
