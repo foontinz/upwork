@@ -253,6 +253,6 @@ class Scraper:
             return self.soup.find("a", {"class": "card_org-logo"})["href"].strip()
 
 
-print(Scraper(
+pprint(Scraper(
     "https://www.petfinder.com/member/us/ak/fairbanks/homeward-bound-pet-rescue-and-referral-ak29/",
     'shelter').object.unit)
