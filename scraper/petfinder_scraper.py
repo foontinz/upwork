@@ -1,13 +1,14 @@
 import json
-import requests
-import bs4
 from pprint import pprint
+
+import bs4
+import requests
 
 
 class Shelter:
     def __init__(self, shelter_id, shelter_name, shelter_address, shelter_coordinates, shelter_email, shelter_phone,
                  shelter_mission, shelter_adoption_policy, shelter_photos):
-        self.unit = {
+        self._unit = {
             'shelter_id': shelter_id,
             'shelter_name': shelter_name,
             'shelter_address': shelter_address,
@@ -19,9 +20,13 @@ class Shelter:
             'shelter_photos': shelter_photos
         }
 
+    @property
+    def unit(self):
+        return self._unit
+
 
 class Pet:
-    def __init__(self, pet_is_adopted, pet_id, pet_published_at, pet_name, pet_description, pet_attributes,
+    def __init__(self, pet_is_adopted, pet_id, pet_published_at, pet_name, pet_description, pet_tags, pet_attributes,
                  pet_adoption_fee, pet_about_attributes, pet_about_home_environment_attributes, pet_photos,
                  pet_shelter_name, pet_shelter_id, pet_shelter_location, pet_shelter_coordinates, pet_shelter_email,
                  pet_shelter_phone,
@@ -31,6 +36,7 @@ class Pet:
                       'pet_published_at': pet_published_at,
                       'pet_name': pet_name,
                       'pet_description': pet_description,
+                      'pet_tags': pet_tags,
                       'pet_attributes': pet_attributes,
                       'pet_adoption_fee': pet_adoption_fee,
                       'pet_about_attributes': pet_about_attributes,
@@ -55,11 +61,16 @@ class Scraper:
         self.html = self.make_request()
         self.soup = self.make_soup()
         if instance.lower() == "pet":
-            for script in self.soup.find_all("script"):
-                if """global.PF.pageConfig = {""" in script.text.strip():
-                    self.json_data_animal = (json.loads(
-                        script.text.strip()[script.text.strip().find('{"user_auth"'):-11].strip()[:-2] + "}"))
-                    self.object = self.get_pet_info()
+            try:
+                for script in self.soup.find_all("script"):
+                    if """global.PF.pageConfig = {""" in script.text.strip():
+                        self.json_data_animal = (json.loads(
+                            script.text.strip()[script.text.strip().find('{"user_auth"'):-11].strip()[:-2] + "}"))
+                        self.json_data_animal['animal']['home_environment_attributes'].pop("other_animals", None)
+
+                        self.object = self.get_pet_info()
+            except AttributeError or Exception:
+                self.object = self.get_pet_info()
         if instance.lower() == "shelter":
             self.object = self.get_shelter_info()
 
@@ -160,6 +171,7 @@ class Scraper:
         pet_published_at = self.parse_pet_published_at()
         pet_name = self.parse_pet_name()
         pet_description = self.parse_pet_description()
+        pet_tags = self.parse_pet_tags()
         pet_attributes = self.parse_pet_attributes()
         pet_adoption_fee = self.parse_public_adoption_fee()
         pet_about_attributes = self.parse_pet_about_attributes()
@@ -172,7 +184,7 @@ class Scraper:
         pet_shelter_email = self.parse_pet_shelter_email()
         pet_shelter_phone = self.parse_pet_shelter_phone()
         pet_shelter_link = self.parse_pet_shelter_link()
-        return Pet(pet_is_adopted, pet_id, pet_published_at, pet_name, pet_description, pet_attributes,
+        return Pet(pet_is_adopted, pet_id, pet_published_at, pet_name, pet_description, pet_tags, pet_attributes,
                    pet_adoption_fee,
                    pet_about_attributes, pet_about_home_environment_attributes, pet_photos, pet_shelter_name,
                    pet_shelter_id, pet_shelter_location, pet_shelter_coordinates, pet_shelter_email,
@@ -180,79 +192,296 @@ class Scraper:
                    pet_shelter_link)
 
     def parse_pet_is_adopted(self):
-        return self.json_data_animal['animal']['adoption_status']
+        try:
+            return self.json_data_animal['animal']['adoption_status']
+        except AttributeError or Exception:
+            return self.soup.find("p", {"id": "Pet_Carousel_Description"}).findParent()['animal-status']
 
     def parse_pet_id(self):
-        return self.json_data_animal['animal']['id']
+        try:
+            return self.json_data_animal['animal']['id']
+        except AttributeError or Exception:
+            return self.soup.find("p", {"id": "Pet_Carousel_Description"}).findParent()['animal_id']
 
     def parse_pet_published_at(self):
-        return self.json_data_animal['animal']['published_at']
+        try:
+            return self.json_data_animal['animal']['published_at']
+        except AttributeError or Exception:
+            return
 
     def parse_pet_name(self):
-        if self.soup.find("span", {"data-test": "Pet_Name"}):
-            return self.soup.find("span", {"data-test": "Pet_Name"}).text.strip()
-        if self.json_data_animal["animal"]["name"]:
+        try:
             return self.json_data_animal["animal"]["name"].strip()
+        except AttributeError or Exception:
+            return self.soup.find("span", {"data-test": "Pet_Name"}).text.strip()
 
     def parse_pet_description(self):
         try:
             if self.soup.find("div", {"data-test": "Pet_Story_Section"}).find("div", {"class": "u-vr4x"}):
                 return self.soup.find("div", {"data-test": "Pet_Story_Section"}).find("div",
                                                                                       {"class": "u-vr4x"}).text.strip()
-        except AttributeError:
-            pass
-
-        if self.json_data_animal['animal']["description"]:
-            return self.json_data_animal['animal']["description"].strip()
+        except AttributeError or Exception:
+            return
 
     def parse_pet_attributes(self):
         return {
-            "age": self.json_data_animal["animal"]['age'],
-            "sex": self.json_data_animal["animal"]['sex'],
-            "size": self.json_data_animal["animal"]['size'],
-            "primary_color": self.json_data_animal["animal"]['primary_color'],
-            "secondary_color": self.json_data_animal["animal"]['secondary_color'],
-            "primary_breed": self.json_data_animal["animal"]['primary_breed'],
-            "secondary_breed": self.json_data_animal["animal"]['secondary_breed']
+            "age": self.parse_pet_age(),
+            "sex": self.parse_pet_sex(),
+            "size": self.parse_pet_size(),
+            "primary_color": self.parse_pet_primary_color(),
+            "secondary_color": self.parse_pet_secondary_color(),
+            "primary_breed": self.parse_pet_primary_breed(),
+            "secondary_breed": self.parse_pet_secondary_breed()
         }
 
+    def parse_pet_age(self):
+        try:
+            return self.json_data_animal["animal"]['age']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"data-test": "Pet_Age"}).text.strip()
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_sex(self):
+        try:
+            return self.json_data_animal["animal"]['sex']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"data-test": "Pet_Sex"}).text.strip()
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_size(self):
+        try:
+            return self.json_data_animal["animal"]['size']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"data-test": "Pet_Full_Grown_Size"}).text.strip()
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_primary_color(self):
+        try:
+            return self.json_data_animal["animal"]['primary_color']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"data-test": "Pet_Primary_Color"}).text.strip()
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_secondary_color(self):
+        try:
+            return self.json_data_animal["animal"]['secondary_color']
+        except AttributeError or Exception:
+            return
+
+    def parse_pet_primary_breed(self):
+        try:
+            return self.json_data_animal["animal"]['primary_breed']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"data-test": "Pet_Breeds"}).text.strip()
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_secondary_breed(self):
+        try:
+            return self.json_data_animal["animal"]['secondary_breed']
+        except AttributeError or Exception:
+            return
+
     def parse_public_adoption_fee(self):
-        return self.json_data_animal['animal']['public_adoption_fee']
+        try:
+            return self.json_data_animal['animal']['public_adoption_fee']
+        except AttributeError or Exception:
+            try:
+                return int(float(self.soup.find("dt", string="Adoption fee").findParent().find("dd").text[1:]))
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_tags(self):
+        try:
+            return self.json_data_animal['animal']['tags']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("dt", string='Characteristics').findParent().findChildren()[
+                    self.soup.find("dt", string='Characteristics').findParent().findChildren().index(
+                        self.soup.find("dt", string='Characteristics')) + 1].text.split(',')
+            except AttributeError or Exception:
+                return
 
     def parse_pet_about_attributes(self):
-        return self.json_data_animal['animal']['attributes']
+        try:
+            coat_length = self.soup.find("dt", string='Coat length').findParent().findChildren()[
+                self.soup.find("dt", string='Coat length').findParent().findChildren().index(
+                    self.soup.find("dt", string='Coat length')) + 1].text
+            house_trained = self.soup.find("dt", string='House-trained').findParent().findChildren()[
+                self.soup.find("dt", string='House-trained').findParent().findChildren().index(
+                    self.soup.find("dt", string='House-trained')) + 1].text
+            health = self.soup.find("dt", string='Health').findParent().findChildren()[
+                self.soup.find("dt", string='Health').findParent().findChildren().index(
+                    self.soup.find("dt", string='Health')) + 1].text
+            return {
+                'Coat-length': coat_length,
+                'House-trained': house_trained,
+                'Health': health
+            }
+        except AttributeError or Exception:
+            return {
+                'Coat-length': None,
+                'House-trained': None,
+                'Health': None
+            }
 
     def parse_pet_about_home_environment_attributes(self):
-        return self.json_data_animal['animal']['home_environment_attributes']
+        try:
+            return self.json_data_animal['animal']['home_environment_attributes']
+        except AttributeError or Exception:
+            try:
+                good_with = self.soup.find("dt", string='Good in a home with').findParent().findChildren()[
+                    self.soup.find("dt",
+                                   string='Good in a home with').findParent().findChildren().index(
+                        self.soup.find("dt", string='Good in a home with')) + 1].text.lower()
+            except AttributeError or Exception:
+                good_with = None
+
+            try:
+                bad_with = self.soup.find("dt", string='Prefers a home without').findParent().findChildren()[
+                    self.soup.find("dt",
+                                   string='Prefers a home without').findParent().findChildren().index(
+                        self.soup.find("dt", string='Prefers a home without')) + 1].text.lower()
+            except AttributeError or Exception:
+                bad_with = None
+
+            good_with_cats = None
+            good_with_children = None
+            good_with_dogs = None
+            good_with_other_animals = None
+
+            if good_with:
+                good_with_cats = True if "cats" in good_with else None
+                good_with_children = True if "children" in good_with else None
+                good_with_dogs = True if "dogs" in good_with else None
+                good_with_other_animals = True if "animals" in good_with else None
+            if bad_with:
+                good_with_cats = False if not good_with_cats and "cats" in bad_with else None
+                good_with_children = False if not good_with_children and "children" in bad_with else None
+                good_with_dogs = False if not good_with_dogs and "dogs" in bad_with else None
+                good_with_other_animals = False if not good_with_other_animals and "animals" in bad_with else None
+
+            return {'good_with_cats': good_with_cats,
+                    'good_with_children': good_with_children,
+                    'good_with_dogs': good_with_dogs,
+                    'good_with_other_animals': good_with_other_animals}
 
     def parse_pet_photos(self):
-        return self.json_data_animal['animal']['photo_urls']
+        try:
+            return self.json_data_animal['animal']['photo_urls']
+        except AttributeError or Exception:
+            try:
+                raw_photos = self.soup.find("div", {"role": "main"}).find("div",
+                                                                          {"class": "petCarousel-body"}).find_all("img")
+                if raw_photos:
+                    photos = [photo["src"] for photo in raw_photos]
+                    return photos
+            except AttributeError or Exception:
+                return []
 
     def parse_pet_shelter_name(self):
-        if self.soup.find("span", {"itemprop": "name"}):
-            return self.soup.find("span", {"itemprop": "name"}).text.strip()
-        return self.json_data_animal['organization']['name']
+        try:
+            return self.json_data_animal['organization']['name']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"itemprop": "name"}).text.strip()
+            except AttributeError or Exception:
+                return
 
     def parse_pet_shelter_id(self):
-        return self.json_data_animal['organization']['display_id']
+        try:
+            return self.json_data_animal['organization']['display_id']
+        except AttributeError or Exception:
+            return self.link[self.link.rfind('-') + 1:-1].upper()
 
     def parse_pet_shelter_location(self):
-        return self.json_data_animal['location']['address']
+        return {'address': self.parse_pet_shelter_location_address(),
+                'city': self.parse_pet_shelter_location_city(),
+                'postal_code': self.parse_pet_shelter_location_postal_code(),
+                'state': self.parse_pet_shelter_location_state()}
+
+    def parse_pet_shelter_location_address(self):
+        try:
+            return self.json_data_animal['location']['address']['address1']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("div", {"class": "txt", "itemprop": "streetAddress"}).text
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_shelter_location_city(self):
+        try:
+            return self.json_data_animal['location']['address']['city']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"class": "txt", "itemprop": "addressLocality"}).text
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_shelter_location_postal_code(self):
+        try:
+            return self.json_data_animal['location']['address']['postal_code']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"class": "txt", "itemprop": "postalCode"}).text
+            except AttributeError or Exception:
+                return
+
+    def parse_pet_shelter_location_state(self):
+        try:
+            return self.json_data_animal['location']['address']['state']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"class": "txt", "itemprop": "addressRegion"}).text
+            except AttributeError or Exception:
+                return
 
     def parse_pet_shelter_coordinates(self):
-        return self.json_data_animal['location']['geo']
+        try:
+            return self.json_data_animal['location']['geo']
+        except AttributeError or Exception:
+            shelter_coordinates_section = self.soup.find("div", {"class": "get-directions"})
+            return {
+                "latitude": shelter_coordinates_section[
+                    "data-latitude"].strip() if shelter_coordinates_section else None,
+                "longitude": shelter_coordinates_section[
+                    "data-longitude"].strip() if shelter_coordinates_section else None}
 
     def parse_pet_shelter_email(self):
-        return self.json_data_animal['contact']['email']
+        try:
+            return self.json_data_animal['contact']['email']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("div", {"class": "card-section card-section_constrained"}).select_one(
+                    "a[href*=mailto]").text.strip()
+            except AttributeError or Exception:
+                return
 
     def parse_pet_shelter_phone(self):
-        return self.json_data_animal['contact']['phone']
+        try:
+            return self.json_data_animal['contact']['phone']
+        except AttributeError or Exception:
+            try:
+                return self.soup.find("span", {"itemprop": "telephone"}).text.strip()
+            except AttributeError or Exception:
+                return
 
     def parse_pet_shelter_link(self):
-        if self.soup.find("a", {"class": "card_org-logo"}):
+        try:
             return self.soup.find("a", {"class": "card_org-logo"})["href"].strip()
+        except AttributeError or Exception:
+            return
 
 
-pprint(Scraper(
-    "https://www.petfinder.com/member/us/ak/fairbanks/homeward-bound-pet-rescue-and-referral-ak29/",
-    'shelter').object.unit)
+pprint(
+    Scraper("https://www.petfinder.com/dog/hunter-55309697/ak/fairbanks/homeward-bound-pet-rescue-and-referral-ak29/",
+            "pet").object.unit)
